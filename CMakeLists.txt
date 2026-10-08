@@ -59,6 +59,9 @@ if(NOT PLATFORM)
     endif()
 endif()
 
+if(PLATFORM STREQUAL "CafeOS" AND NOT RETRO_DISABLE_PLUS)
+    message(FATAL_ERROR "Wii U builds require RETRO_DISABLE_PLUS=ON to comply with the RSDKv3 license.")
+endif()
 include(platforms/${PLATFORM}.cmake)
 
 set_target_properties(RetroEngine PROPERTIES OUTPUT_NAME ${RETRO_OUTPUT_NAME})
@@ -186,3 +189,17 @@ target_compile_definitions(RetroEngine PRIVATE
     RETRO_DEV_EXTRA="${PLATFORM} - ${CMAKE_CXX_COMPILER_ID}"
     DECOMP_VERSION="${DECOMP_VERSION}"
 )
+
+# Nintendo Wii U - RPX and WUHB packaging
+if(WIIU)
+    wut_create_rpx(RetroEngine)
+
+    wut_create_wuhb(RetroEngine
+        NAME      "Sonic CD"
+        SHORTNAME "Sonic CD"
+        AUTHOR    "Clownacy, Rubberduckycooly, chuliRMG"
+        ICON      "wiiu/icon.png"
+        TVSPLASH  "wiiu/tv.png"
+        DRCSPLASH "wiiu/drc.png"
+    )
+endif()

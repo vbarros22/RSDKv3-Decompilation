@@ -364,7 +364,11 @@ void InitUserdata()
 
         ini.SetBool("Window", "FullScreen", Engine.startFullScreen = DEFAULT_FULLSCREEN);
         ini.SetBool("Window", "Borderless", Engine.borderless = false);
+#if RETRO_PLATFORM == RETRO_WIIU
+        ini.SetBool("Window", "VSync", Engine.vsync = true);
+#else
         ini.SetBool("Window", "VSync", Engine.vsync = false);
+#endif
         ini.SetInteger("Window", "ScalingMode", Engine.scalingMode = 0);
         ini.SetInteger("Window", "WindowScale", Engine.windowScale = 2);
         ini.SetInteger("Window", "ScreenWidth", SCREEN_XSIZE = DEFAULT_SCREEN_XSIZE);
@@ -494,8 +498,13 @@ void InitUserdata()
             Engine.startFullScreen = DEFAULT_FULLSCREEN;
         if (!ini.GetBool("Window", "Borderless", &Engine.borderless))
             Engine.borderless = false;
-        if (!ini.GetBool("Window", "VSync", &Engine.vsync))
+        if (!ini.GetBool("Window", "VSync", &Engine.vsync)) {
+#if RETRO_PLATFORM == RETRO_WIIU
+            Engine.vsync = true;
+#else
             Engine.vsync = false;
+#endif
+        }
         if (!ini.GetInteger("Window", "ScalingMode", &Engine.scalingMode))
             Engine.scalingMode = 0;
         if (!ini.GetInteger("Window", "WindowScale", &Engine.windowScale))

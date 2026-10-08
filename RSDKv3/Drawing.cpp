@@ -150,7 +150,15 @@ int InitRenderDevice()
     Engine.window = SDL_CreateWindow(gameTitle, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, SCREEN_XSIZE * Engine.windowScale,
                                      SCREEN_YSIZE * Engine.windowScale, SDL_WINDOW_ALLOW_HIGHDPI | flags);
 #if !RETRO_USING_OPENGL
+#if RETRO_PLATFORM == RETRO_WIIU
+    Engine.renderer = SDL_CreateRenderer(
+        Engine.window,
+        -1,
+        SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
+    );
+#else
     Engine.renderer = SDL_CreateRenderer(Engine.window, -1, SDL_RENDERER_ACCELERATED);
+#endif
 #endif
 
     if (!Engine.window) {

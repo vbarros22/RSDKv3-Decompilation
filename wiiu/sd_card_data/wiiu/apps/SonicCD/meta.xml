@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<app version="1">
+  <name>Sonic CD</name>
+  <coder>Clownacy, Rubberduckycooly, chuliRMG</coder>
+  <version>1.3.3</version>
+  <release_date>20261007000000</release_date>
+  <url>https://github.com/RSDKModding/RSDKv3-Decompilation</url>
+  <short_description>Sonic CD 2011 decompilation - Wii U port.</short_description>
+  <long_description>Wii U port based on RSDKv3 1.3.3. Original Wii U port by Clownacy and contributors. Place your own Data.rsdk in SD:/SonicCD/Data.rsdk.</long_description>
+  <category>game</category>
+</app>
