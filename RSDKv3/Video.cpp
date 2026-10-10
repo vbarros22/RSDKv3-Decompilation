@@ -287,7 +287,7 @@ void StopVideoPlayback()
         // `videoPlaying` and `videoDecoder` are read by
         // the audio thread, so lock it to prevent a race
         // condition that results in invalid memory accesses.
-        SDL_LockAudio();
+        LockAudioDevice();
 
         if (videoSkipped && fadeMode >= 0xFF)
             fadeMode = 0;
@@ -304,7 +304,7 @@ void StopVideoPlayback()
         CloseVideoBuffer();
         videoPlaying = 0;
 
-        SDL_UnlockAudio();
+        UnlockAudioDevice();
     }
 }
 

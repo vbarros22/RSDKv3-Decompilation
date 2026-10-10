@@ -383,6 +383,20 @@ void RetroEngine::Run()
         }
 #endif
         running = ProcessEvents();
+#if RETRO_PLATFORM == RETRO_WIIU && RETRO_USING_SDL2
+        // Wii U: L + R + SELECT opens the developer menu.
+        static bool devMenuShortcutHeld = false;
+
+        bool devMenuShortcutPressed = IsWiiUDevMenuShortcutPressed();
+
+        if (Engine.devMenu && devMenuShortcutPressed && !devMenuShortcutHeld
+            && Engine.gameMode != ENGINE_DEVMENU
+            && Engine.gameMode != ENGINE_INITDEVMENU) {
+            Engine.gameMode = ENGINE_INITDEVMENU;
+        }
+
+        devMenuShortcutHeld = devMenuShortcutPressed;
+#endif
 
         // Focus Checks
         if (!((disableFocusPause + 1) & 2)) {
@@ -521,8 +535,8 @@ void RetroEngine::Run()
 #endif
     }
 
-    ReleaseAudioDevice();
     StopVideoPlayback();
+    ReleaseAudioDevice();
     ReleaseRenderDevice();
     WriteSettings();
 #if RETRO_USE_MOD_LOADER
@@ -843,6 +857,11 @@ void RetroEngine::LoadXMLSoundFX()
                     const tinyxml2::XMLElement *sfxElement = FirstXMLChildElement(doc, soundsElement, "soundfx");
                     if (sfxElement) {
                         do {
+                            if (globalSFXCount >= SFX_COUNT) {
+                                PrintLog("SFX limit reached; skipping additional mod sounds");
+                                break;
+                            }
+
                             const tinyxml2::XMLAttribute *pathAttr = FindXMLAttribute(sfxElement, "path");
                             const char *sfxPath                    = "unknownSFX.wav";
                             if (pathAttr)

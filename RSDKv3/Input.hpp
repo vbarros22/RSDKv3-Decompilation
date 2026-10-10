@@ -90,6 +90,11 @@ enum ExtraSDLButtons {
     SDL_CONTROLLER_BUTTON_MAX_EXTRA,
 };
 
+
+#if RETRO_PLATFORM == RETRO_WIIU
+bool IsWiiUDevMenuShortcutPressed();
+#endif
+
 void ControllerInit(byte controllerID);
 void ControllerClose(byte controllerID);
 #endif

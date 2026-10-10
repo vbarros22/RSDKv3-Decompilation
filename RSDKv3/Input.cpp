@@ -163,6 +163,23 @@ int lastMouseY     = 0;
 #if RETRO_USING_SDL2
 std::vector<SDL_GameController *> controllers;
 #endif
+#if RETRO_PLATFORM == RETRO_WIIU && RETRO_USING_SDL2
+bool IsWiiUDevMenuShortcutPressed()
+{
+    for (SDL_GameController *controller : controllers) {
+        if (!controller || !SDL_GameControllerGetAttached(controller))
+            continue;
+
+        if (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_LEFTSHOULDER)
+            && SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)
+            && SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_BACK)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+#endif
 
 #if RETRO_USING_SDL1
 byte keyState[SDLK_LAST];

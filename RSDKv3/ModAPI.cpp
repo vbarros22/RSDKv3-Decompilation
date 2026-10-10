@@ -416,6 +416,7 @@ void RefreshEngine()
     SDL_WM_SetCaption(gameTitle, NULL);
 #endif
 
+    ReleaseStageSfx();
     ReleaseGlobalSfx();
     LoadGlobalSfx();
 

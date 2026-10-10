@@ -555,16 +555,29 @@ void LoadStageFiles(void)
 
             FileRead(&fileBuffer2, 1);
             stageSFXCount = fileBuffer2;
-            for (int i = 0; i < stageSFXCount; ++i) {
+            const int declaredStageSFXCount = stageSFXCount;
+
+            const int availableStageSFXSlots = globalSFXCount < SFX_COUNT
+                                                   ? SFX_COUNT - globalSFXCount
+                                                   : 0;
+
+            if (stageSFXCount > availableStageSFXSlots)
+                stageSFXCount = availableStageSFXSlots;
+
+            for (int i = 0; i < declaredStageSFXCount; ++i) {
                 FileRead(&fileBuffer2, 1);
                 FileRead(strBuffer, fileBuffer2);
                 strBuffer[fileBuffer2] = 0;
                 GetFileInfo(&infoStore);
                 CloseFile();
-                LoadSfx(strBuffer, globalSFXCount + i);
+
+                if (i < stageSFXCount)
+                    LoadSfx(strBuffer, globalSFXCount + i);
+
                 SetFileInfo(&infoStore);
 #if RETRO_USE_MOD_LOADER
-                SetSfxName(strBuffer, i, false);
+                if (i < stageSFXCount)
+                    SetSfxName(strBuffer, i, false);
 #endif
             }
             CloseFile();

@@ -49,6 +49,8 @@ int InitAudioPlayback()
     StopAllSfx(); //"init"
 #if RETRO_USING_SDL1 || RETRO_USING_SDL2
     SDL_AudioSpec want;
+    SDL_zero(want);
+
     want.freq     = AUDIO_FREQUENCY;
     want.format   = AUDIO_FORMAT;
     want.samples  = AUDIO_SAMPLES;
@@ -58,7 +60,6 @@ int InitAudioPlayback()
 #if RETRO_USING_SDL2
     if ((audioDevice = SDL_OpenAudioDevice(nullptr, 0, &want, &audioDeviceFormat, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE)) > 0) {
         audioEnabled = true;
-        SDL_PauseAudioDevice(audioDevice, 0);
         PrintLog("Opened audio device: %d", audioDevice);
     }
     else {
@@ -76,6 +77,7 @@ int InitAudioPlayback()
     if (!ogv_stream) {
         PrintLog("Failed to create stream: %s", SDL_GetError());
         SDL_CloseAudioDevice(audioDevice);
+        audioDevice = 0;
         audioEnabled = false;
         return true; // no audio but game wont crash now
     }
@@ -95,9 +97,13 @@ int InitAudioPlayback()
 
     LoadGlobalSfx();
 
+#if RETRO_USING_SDL2
+    if (audioDevice != 0)
+        SDL_PauseAudioDevice(audioDevice, 0);
+#endif
+
     return true;
 }
-
 void LoadGlobalSfx()
 {
     FileInfo info;
@@ -153,7 +159,7 @@ void LoadGlobalSfx()
         // Read SFX
         FileRead(&fileBuffer, 1);
         globalSFXCount = fileBuffer;
-        for (byte s = 0; s < globalSFXCount; ++s) {
+        for (int s = 0; s < globalSFXCount; ++s) {
             FileRead(&fileBuffer, 1);
             FileRead(strBuffer, fileBuffer);
             strBuffer[fileBuffer] = 0;
@@ -220,10 +226,18 @@ void ProcessMusicStream(Sint32 *stream, size_t bytes_wanted)
         return;
     if (!streamFilePtr->fileSize)
         return;
+
+#if RETRO_USING_SDL2
+    if (!streamInfoPtr->stream)
+        return;
+#endif
+
     switch (musicStatus) {
         case MUSIC_READY:
         case MUSIC_PLAYING: {
 #if RETRO_USING_SDL2
+            bool loopSeekWithoutAudio = false;
+
             while (musicStatus == MUSIC_PLAYING && SDL_AudioStreamAvailable(streamInfoPtr->stream) < bytes_wanted) {
                 // We need more samples: get some
                 long bytes_read = ov_read(&streamInfoPtr->vorbisFile, (char *)streamInfoPtr->buffer, sizeof(streamInfoPtr->buffer), 0, 2, 1,
@@ -232,17 +246,32 @@ void ProcessMusicStream(Sint32 *stream, size_t bytes_wanted)
                 if (bytes_read == 0) {
                     // We've reached the end of the file
                     if (streamInfoPtr->trackLoop) {
-                        ov_pcm_seek(&streamInfoPtr->vorbisFile, streamInfoPtr->loopPoint);
-                        continue;
+                        if (loopSeekWithoutAudio) {
+                            PrintLog("Music loop produced no audio");
+                        }
+                        else if (ov_pcm_seek(&streamInfoPtr->vorbisFile, streamInfoPtr->loopPoint) == 0) {
+                            loopSeekWithoutAudio = true;
+                            continue;
+                        }
+                        else {
+                            PrintLog("Music loop seek failed");
+                        }
                     }
-                    else {
-                        musicStatus = MUSIC_STOPPED;
-                        break;
-                    }
+
+                    musicStatus = MUSIC_STOPPED;
+                    break;
+                }
+
+                if (bytes_read < 0) {
+                    PrintLog("Music decoding failed: %ld", bytes_read);
+                    musicStatus = MUSIC_STOPPED;
+                    break;
                 }
 
                 if (musicStatus != MUSIC_PLAYING || SDL_AudioStreamPut(streamInfoPtr->stream, streamInfoPtr->buffer, (int)bytes_read) == -1)
                     return;
+
+                loopSeekWithoutAudio = false;
             }
 
             // Now that we know there are enough samples, read them and mix them
@@ -435,9 +464,20 @@ void ProcessAudioPlayback(void *userdata, Uint8 *stream, int len)
             if (sfx->sfxID < 0)
                 continue;
 
+            if (sfx->sfxID >= SFX_COUNT) {
+                MEM_ZEROP(sfx);
+                sfx->sfxID = -1;
+                continue;
+            }
+
+            if (sfx->sampleLength == 0 || !sfx->samplePtr) {
+                MEM_ZEROP(sfx);
+                sfx->sfxID = -1;
+                continue;
+            }
+
             if (sfx->samplePtr) {
                 Sint16 buffer[MIX_BUFFER_SAMPLES];
-
                 size_t samples_done = 0;
                 while (samples_done != samples_to_do) {
                     size_t sampleLen = (sfx->sampleLength < samples_to_do - samples_done) ? sfx->sampleLength : samples_to_do - samples_done;
@@ -448,7 +488,7 @@ void ProcessAudioPlayback(void *userdata, Uint8 *stream, int len)
                     sfx->sampleLength -= sampleLen;
 
                     if (sfx->sampleLength == 0) {
-                        if (sfx->loopSFX) {
+                        if (sfx->loopSFX && sfxList[sfx->sfxID].buffer && sfxList[sfx->sfxID].length > 0) {
                             sfx->samplePtr    = sfxList[sfx->sfxID].buffer;
                             sfx->sampleLength = sfxList[sfx->sfxID].length;
                         }
@@ -467,7 +507,7 @@ void ProcessAudioPlayback(void *userdata, Uint8 *stream, int len)
         }
 
         // Clamp mixed samples back to 16-bit and write them to the output buffer
-        for (size_t i = 0; i < sizeof(mix_buffer) / sizeof(*mix_buffer); ++i) {
+        for (size_t i = 0; i < samples_to_do; ++i) {
             const Sint16 max_audioval = ((1 << (16 - 1)) - 1);
             const Sint16 min_audioval = -(1 << (16 - 1));
 
@@ -532,6 +572,9 @@ char globalSfxNames[SFX_COUNT][0x40];
 char stageSfxNames[SFX_COUNT][0x40];
 void SetSfxName(const char *sfxName, int sfxID, bool global)
 {
+    if (sfxID < 0 || sfxID >= SFX_COUNT)
+        return;
+
     char *sfxNamePtr = global ? globalSfxNames[sfxID] : stageSfxNames[sfxID];
 
     int sfxNamePos = 0;
@@ -542,7 +585,7 @@ void SetSfxName(const char *sfxName, int sfxID, bool global)
             mode = 2;
         else if ((sfxName[sfxNamePos] == '/' || sfxName[sfxNamePos] == '\\') && !mode)
             mode = 1;
-        else if (sfxName[sfxNamePos] != ' ' && mode == 1)
+        else if (sfxName[sfxNamePos] != ' ' && mode == 1 && sfxPtrPos < 0x40 - 1)
             sfxNamePtr[sfxPtrPos++] = sfxName[sfxNamePos];
         ++sfxNamePos;
     }
@@ -558,21 +601,45 @@ void LoadMusic()
 
     LockAudioDevice();
 
-    if (streamFile[currentStreamIndex].fileSize > 0)
-        FreeMusInfo();
+    FreeMusInfo(currentStreamIndex);
 
     FileInfo info;
     if (LoadFile(musicTracks[currentMusicTrack].fileName, &info)) {
         StreamInfo *strmInfo = &streamInfo[currentStreamIndex];
 
-        StreamFile *musFile                   = &streamFile[currentStreamIndex];
-        musFile->filePos                      = 0;
-        musFile->fileSize                     = info.vFileSize;
-        streamFile[currentStreamIndex].buffer = (byte *)malloc(musFile->fileSize);
+        StreamFile *musFile = &streamFile[currentStreamIndex];
+        musFile->filePos = 0;
+        musFile->fileSize = info.vFileSize;
 
-        FileRead(streamFile[currentStreamIndex].buffer, musFile->fileSize);
+        if (musFile->fileSize <= 0) {
+            PrintLog("Failed to load music: invalid file size");
+            CloseFile();
+            musicStatus = MUSIC_STOPPED;
+
+            for (int slot = 0; slot < STREAMFILE_COUNT; ++slot)
+                FreeMusInfo(slot);
+
+            currentMusicTrack = -1;
+            UnlockAudioDevice();
+            return;
+        }
+        musFile->buffer = (byte *)malloc(musFile->fileSize);
+
+        if (!musFile->buffer) {
+            PrintLog("Failed to allocate music buffer (%d bytes)", musFile->fileSize);
+            musFile->fileSize = 0;
+            CloseFile();
+            musicStatus = MUSIC_STOPPED;
+
+            for (int slot = 0; slot < STREAMFILE_COUNT; ++slot)
+                FreeMusInfo(slot);
+
+            currentMusicTrack = -1;
+            UnlockAudioDevice();
+            return;
+        }
+        FileRead(musFile->buffer, musFile->fileSize);
         CloseFile();
-
         ov_callbacks callbacks;
 
         callbacks.read_func  = readVorbis;
@@ -582,23 +649,46 @@ void LoadMusic()
 
         int error = ov_open_callbacks(musFile, &strmInfo->vorbisFile, NULL, 0, callbacks);
         if (error == 0) {
+             strmInfo->loaded = true;
             strmInfo->vorbBitstream = -1;
             strmInfo->vorbisFile.vi = ov_info(&strmInfo->vorbisFile, -1);
+
+            if (!strmInfo->vorbisFile.vi) {
+                PrintLog("Failed to read Vorbis stream information");
+                musicStatus = MUSIC_STOPPED;
+
+                for (int slot = 0; slot < STREAMFILE_COUNT; ++slot)
+                    FreeMusInfo(slot);
+
+                currentMusicTrack = -1;
+                UnlockAudioDevice();
+                return;
+            }
 
 #if RETRO_USING_SDL2
             strmInfo->stream = SDL_NewAudioStream(AUDIO_S16, strmInfo->vorbisFile.vi->channels, (int)strmInfo->vorbisFile.vi->rate,
                                                   audioDeviceFormat.format, audioDeviceFormat.channels, audioDeviceFormat.freq);
             if (!strmInfo->stream) {
                 PrintLog("Failed to create stream: %s", SDL_GetError());
+                musicStatus = MUSIC_STOPPED;
+
+                for (int slot = 0; slot < STREAMFILE_COUNT; ++slot)
+                    FreeMusInfo(slot);
+
+                currentMusicTrack = -1;
+                UnlockAudioDevice();
+                return;
             }
 #endif
-
 #if RETRO_USING_SDL1
             strmInfo->spec.format   = AUDIO_S16;
             strmInfo->spec.channels = strmInfo->vorbisFile.vi->channels;
             strmInfo->spec.freq     = (int)strmInfo->vorbisFile.vi->rate;
 #endif
-
+            for (int slot = 0; slot < STREAMFILE_COUNT; ++slot) {
+                if (slot != currentStreamIndex)
+                    FreeMusInfo(slot);
+            }
             musicStatus         = MUSIC_PLAYING;
             masterVolume        = MAX_VOLUME;
             trackID             = currentMusicTrack;
@@ -611,6 +701,12 @@ void LoadMusic()
         }
         else {
             musicStatus = MUSIC_STOPPED;
+
+            free(musFile->buffer);
+            musFile->buffer = NULL;
+            musFile->fileSize = 0;
+            musFile->filePos = 0;
+
             PrintLog("Failed to load vorbis! error: %d", error);
             switch (error) {
                 default: PrintLog("Vorbis open error: Unknown (%d)", error); break;
@@ -625,9 +721,16 @@ void LoadMusic()
     else {
         musicStatus = MUSIC_STOPPED;
     }
+
+    if (musicStatus == MUSIC_STOPPED) {
+        for (int slot = 0; slot < STREAMFILE_COUNT; ++slot)
+            FreeMusInfo(slot);
+
+        currentMusicTrack = -1;
+    }
+
     UnlockAudioDevice();
 }
-
 void SetMusicTrack(char *filePath, byte trackID, bool loop, uint loopPoint)
 {
     LockAudioDevice();
@@ -688,6 +791,7 @@ void LoadSfx(char *filePath, byte sfxID)
         SDL_RWops *src = SDL_RWFromMem(sfx, info.vFileSize);
         if (src == NULL) {
             PrintLog("Unable to open sfx: %s", info.fileName);
+            delete[] sfx;
         }
         else {
             SDL_AudioSpec wav_spec;
@@ -702,13 +806,31 @@ void LoadSfx(char *filePath, byte sfxID)
             }
             else {
                 SDL_AudioCVT convert;
-                if (SDL_BuildAudioCVT(&convert, wav->format, wav->channels, wav->freq, audioDeviceFormat.format, audioDeviceFormat.channels,
-                                      audioDeviceFormat.freq)
-                    > 0) {
+                int cvtResult = SDL_BuildAudioCVT(&convert, wav->format, wav->channels, wav->freq, audioDeviceFormat.format,
+                                                  audioDeviceFormat.channels, audioDeviceFormat.freq);
+                if (cvtResult < 0) {
+                    PrintLog("Unable to prepare sfx conversion: %s", SDL_GetError());
+                    SDL_FreeWAV(wav_buffer);
+                }
+                else if (cvtResult > 0) {
                     convert.buf = (byte *)malloc(wav_length * convert.len_mult);
+                    if (!convert.buf) {
+                        PrintLog("Unable to allocate sfx conversion buffer: %s", filePath);
+                        SDL_FreeWAV(wav_buffer);
+                        UnlockAudioDevice();
+                    return;
+                    }
+
                     convert.len = wav_length;
                     memcpy(convert.buf, wav_buffer, wav_length);
-                    SDL_ConvertAudio(&convert);
+
+                    if (SDL_ConvertAudio(&convert) < 0) {
+                        PrintLog("Unable to convert sfx: %s", SDL_GetError());
+                        free(convert.buf);
+                        SDL_FreeWAV(wav_buffer);
+                        UnlockAudioDevice();
+                    return;
+                    }
 
                     StrCopy(sfxList[sfxID].name, filePath);
                     sfxList[sfxID].buffer = (Sint16 *)convert.buf;
@@ -730,7 +852,16 @@ void LoadSfx(char *filePath, byte sfxID)
 }
 void PlaySfx(int sfx, bool loop)
 {
+    if (sfx < 0 || sfx >= SFX_COUNT)
+        return;
+
     LockAudioDevice();
+
+    if (!sfxList[sfx].loaded || !sfxList[sfx].buffer || sfxList[sfx].length == 0) {
+        UnlockAudioDevice();
+        return;
+    }
+
     int sfxChannelID = nextChannelPos++;
     for (int c = 0; c < CHANNEL_COUNT; ++c) {
         if (sfxChannels[c].sfxID == sfx) {
@@ -751,7 +882,16 @@ void PlaySfx(int sfx, bool loop)
 }
 void SetSfxAttributes(int sfx, int loopCount, sbyte pan)
 {
+    if (sfx < 0 || sfx >= SFX_COUNT)
+        return;
+
     LockAudioDevice();
+
+    if (!sfxList[sfx].loaded || !sfxList[sfx].buffer || sfxList[sfx].length == 0) {
+        UnlockAudioDevice();
+        return;
+    }
+
     int sfxChannel = -1;
     for (int i = 0; i < CHANNEL_COUNT; ++i) {
         if (sfxChannels[i].sfxID == sfx || sfxChannels[i].sfxID == -1) {
@@ -759,14 +899,17 @@ void SetSfxAttributes(int sfx, int loopCount, sbyte pan)
             break;
         }
     }
-    if (sfxChannel == -1)
+    if (sfxChannel == -1) {
+        UnlockAudioDevice();
         return; // wasn't found
-
+    }
     // TODO: is this right? should it play an sfx here? without this rings dont play any sfx so I assume it must be?
     ChannelInfo *sfxInfo  = &sfxChannels[sfxChannel];
+    bool sameSfx         = sfxInfo->sfxID == sfx;
+
     sfxInfo->samplePtr    = sfxList[sfx].buffer;
     sfxInfo->sampleLength = sfxList[sfx].length;
-    sfxInfo->loopSFX      = loopCount == -1 ? sfxInfo->loopSFX : loopCount;
+    sfxInfo->loopSFX      = loopCount == -1 ? (sameSfx ? sfxInfo->loopSFX : 0) : loopCount;
     sfxInfo->pan          = pan;
     sfxInfo->sfxID        = sfx;
     UnlockAudioDevice();

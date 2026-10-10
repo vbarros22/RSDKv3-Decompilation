@@ -1181,7 +1181,7 @@ void ConvertFunctionText(char *text)
                 funcName[1] = 0;
 
                 int s = 0;
-                for (; s < globalSFXCount; ++s) {
+                for (; s < globalSFXCount && s < SFX_COUNT; ++s) {
                     if (StrComp(arrayStr, globalSfxNames[s])) {
                         funcName[0] = 0;
                         AppendIntegerToString(funcName, s);
@@ -1189,9 +1189,9 @@ void ConvertFunctionText(char *text)
                     }
                 }
 
-                if (s == globalSFXCount) {
+                if (s == globalSFXCount || s == SFX_COUNT) {
                     s = 0;
-                    for (; s < stageSFXCount; ++s) {
+                    for (; s < stageSFXCount && s < SFX_COUNT; ++s) {
                         if (StrComp(arrayStr, stageSfxNames[s])) {
                             funcName[0] = 0;
                             AppendIntegerToString(funcName, s);
@@ -1199,9 +1199,9 @@ void ConvertFunctionText(char *text)
                         }
                     }
 
-                    if (s == stageSFXCount) {
+                    if (s == stageSFXCount || s == SFX_COUNT) {
                         char buf[0x40];
-                        sprintf(buf, "WARNING: Unknown SfxName \"%s\"", arrayStr);
+                        snprintf(buf, sizeof(buf), "WARNING: Unknown SfxName \"%s\"", arrayStr);
                         PrintLog(buf);
                     }
                 }
@@ -3745,11 +3745,13 @@ void ProcessScript(int scriptCodeStart, int jumpTableStart, byte scriptSub)
                 break;
             case FUNC_PLAYSTAGESFX:
                 opcodeSize = 0;
-                PlaySfx(globalSFXCount + scriptEng.operands[0], scriptEng.operands[1]);
+                if (scriptEng.operands[0] >= 0 && scriptEng.operands[0] < stageSFXCount)
+                    PlaySfx(globalSFXCount + scriptEng.operands[0], scriptEng.operands[1]);
                 break;
             case FUNC_STOPSTAGESFX:
                 opcodeSize = 0;
-                StopSfx(globalSFXCount + scriptEng.operands[0]);
+                if (scriptEng.operands[0] >= 0 && scriptEng.operands[0] < stageSFXCount)
+                    StopSfx(globalSFXCount + scriptEng.operands[0]);
                 break;
             case FUNC_NOT: scriptEng.operands[0] = ~scriptEng.operands[0]; break;
             case FUNC_DRAW3DSCENE:
